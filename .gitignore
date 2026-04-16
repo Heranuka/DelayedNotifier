@@ -37,3 +37,10 @@ secrets
 .vscode/
 
 docker-compose.dev.yml
+
+# Web/Node
+node_modules/
+web/node_modules/
+dist/
+web/dist/
+.DS_Store
