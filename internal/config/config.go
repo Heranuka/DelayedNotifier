@@ -1,127 +1,132 @@
+// Package config provides application configuration loading and defaults.
 package config
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/joho/godotenv"
+	"github.com/wb-go/wbf/config"
 )
 
+// Config holds the application-wide configuration state.
 type Config struct {
-	Env       string `env:"ENV"`
-	Http      HttpConfig
-	Redis     RedisConfig
-	Postgres  DBConfig
-	RabbitMQ  RabbitMQConfig
-	TelegBot  TelegramBotConfig
-	EmailSmpt EmailChannel
+	Env      string   `mapstructure:"env"`
+	HTTP     HTTP     `mapstructure:"http"`
+	Postgres Postgres `mapstructure:"postgres"`
+	Logging  Logging  `mapstructure:"logging"`
+	Redis    Redis    `mapstructure:"redis"`
+	RabbitMQ RabbitMQ `mapstructure:"rabbitmq"`
+	Mailer   SMTP     `mapstructure:"mailer"`
+	Telegram Telegram `mapstructure:"telegram"`
 }
 
-type HttpConfig struct {
-	Port            string        `env:"HTTP_PORT"`
-	ReadTimeout     time.Duration `env:"HTTP_READ_TIMEOUT"`
-	WriteTimeout    time.Duration `env:"HTTP_WRITE_TIMEOUT"`
-	ShutdownTimeout time.Duration `env:"HTTP_SHUTDOWN_TIMEOUT"`
+// HTTP contains settings for the HTTP server.
+type HTTP struct {
+	Port            string        `mapstructure:"port"`
+	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
+	IdleTimeout     time.Duration `mapstructure:"idle_timeout"`
+	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
 }
 
-type PostgresConfig struct {
-	Host     string `env:"POSTGRES_HOST"`
-	Port     int    `env:"POSTGRES_PORT"`
-	Database string `env:"POSTGRES_DATABASE"`
-	User     string `env:"POSTGRES_USER"`
-	Password string `env:"POSTGRES_PASSWORD"`
-	SSLMode  string `env:"POSTGRES_SSL_MODE"`
+type Telegram struct {
+	TelegramToken string `mapstructure:"-"`
+	ChatID        int64  `mapstructure:"-"`
 }
 
-type RedisConfig struct {
-	Addr     string `env:"REDIS_ADDR"`
-	Password string `env:"REDIS_PASSWORD"`
-	DBRedis  int    `env:"REDIS_DBREDIS"`
+// Postgres encapsulates database connection settings.
+type Postgres struct {
+	ConnectionURL string `mapstructure:"connection_url"`
 }
 
-type RabbitMQConfig struct {
-	Host     string `env:"RABBIT_HOST"`
-	Port     int    `env:"RABBIT_PORT"`
-	User     string `env:"RABBIT_USER"`
-	Password string `env:"RABBIT_PASSWORD"`
+// Logging defines the verbosity and format of application logs.
+type Logging struct {
+	Level string `mapstructure:"level"`
 }
 
-type DBConfig struct {
-	Master PostgresConfig
-	Slaves []PostgresConfig
-
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
+// Redis contains Redis connection settings.
+type Redis struct {
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
-type EmailChannel struct {
-	SmptPort     int    `env:"SMPT_PORT"`
-	SmptServer   string `env:"SMPT_SERVER"`
-	SmptEmail    string `env:"SMPT_EMAIL"`
-	SmptPassword string `env:"SMPT_PASSWORD"`
-}
-type TelegramBotConfig struct {
-	Key    string `env:"TELEGRAMBOT_KEY"`
-	ChatID int64  `env:"TELEGRAMBOT_CHATID"`
+// RabbitMQ contains RabbitMQ connection and queue settings.
+type RabbitMQ struct {
+	Host         string `mapstructure:"host"`
+	Port         int    `mapstructure:"port"`
+	User         string `mapstructure:"user"`
+	Password     string `mapstructure:"password"`
+	QueueName    string `mapstructure:"queue_name"`
+	DLXName      string `mapstructure:"dlx_name"`
+	DLQName      string `mapstructure:"dlq_name"`
+	ExchangeName string `mapstructure:"exchange_name"`
 }
 
-func LoadConfig() (*Config, error) {
-	if err := godotenv.Load(); err != nil {
-		log.Println(".env file not found, continuing with system environment variables")
+// SMTP contains SMTP settings.
+type SMTP struct {
+	Host        string        `mapstructure:"host"`
+	Port        int           `mapstructure:"port"`
+	Email       string        `mapstructure:"-"`
+	Password    string        `mapstructure:"-"`
+	UseTLS      bool          `mapstructure:"use_tls"`
+	SendTimeout time.Duration `mapstructure:"send_timeout"`
+}
+
+// Load initializes the config registry, applies defaults, and loads
+// configuration files and environment variables.
+func Load(configPath string) (*Config, error) {
+	c := config.New()
+
+	setDefaults(c)
+
+	_ = c.LoadEnvFiles(".env")
+
+	if err := c.LoadConfigFiles(configPath); err != nil {
+		return nil, fmt.Errorf("failed to load config file %s: %w", configPath, err)
 	}
 
-	cfg := Config{}
+	c.EnableEnv("APP")
 
-	cfg.Env = os.Getenv("ENV")
-	cfg.Http.Port = os.Getenv("HTTP_PORT")
-
-	readTimeout := os.Getenv("HTTP_READ_TIMEOUT")
-	if readTimeout == "" {
-		readTimeout = "10s"
+	var cfg Config
+	if err := c.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	cfg.Http.ReadTimeout, _ = time.ParseDuration(readTimeout)
 
-	writeTimeout := os.Getenv("HTTP_WRITE_TIMEOUT")
-	if writeTimeout == "" {
-		writeTimeout = "10s"
+	cfg.Telegram.TelegramToken = os.Getenv("APP_TELEGRAM_TOKEN")
+
+	chatID, err := mustInt64Env("APP_CHAT_ID")
+	if err != nil {
+		return nil, err
 	}
-	cfg.Http.WriteTimeout, _ = time.ParseDuration(writeTimeout)
+	cfg.Telegram.ChatID = chatID
 
-	shutdownTimeout := os.Getenv("HTTP_SHUTDOWN_TIMEOUT")
-	if shutdownTimeout == "" {
-		shutdownTimeout = "10s"
-	}
-	cfg.Http.ShutdownTimeout, _ = time.ParseDuration(shutdownTimeout)
-
-	cfg.Postgres.Master.Host = os.Getenv("POSTGRES_HOST")
-	cfg.Postgres.Master.Port, _ = strconv.Atoi(os.Getenv("POSTGRES_PORT"))
-	cfg.Postgres.Master.Database = os.Getenv("POSTGRES_DATABASE")
-	cfg.Postgres.Master.User = os.Getenv("POSTGRES_USER")
-	cfg.Postgres.Master.Password = os.Getenv("POSTGRES_PASSWORD")
-	cfg.Postgres.Master.SSLMode = os.Getenv("POSTGRES_SSL_MODE")
-
-	cfg.Redis.Addr = os.Getenv("REDIS_ADDR")
-
-	cfg.Redis.Password = os.Getenv("REDIS_PASSWORD")
-	cfg.Redis.DBRedis, _ = strconv.Atoi(os.Getenv("REDIS_DBREDIS"))
-
-	cfg.RabbitMQ.Host = os.Getenv("RABBIT_HOST")
-	cfg.RabbitMQ.Port, _ = strconv.Atoi(os.Getenv("RABBIT_PORT"))
-	cfg.RabbitMQ.User = os.Getenv("RABBIT_USER")
-	cfg.RabbitMQ.Password = os.Getenv("RABBIT_PASSWORD")
-
-	cfg.TelegBot.Key = os.Getenv("TELEGRAMBOT_KEY")
-	cfg.TelegBot.ChatID, _ = strconv.ParseInt(os.Getenv("TELEGRAMBOT_CHATID"), 10, 64)
-
-	cfg.EmailSmpt.SmptPort, _ = strconv.Atoi(os.Getenv("SMPT_PORT"))
-	cfg.EmailSmpt.SmptPassword = os.Getenv("SMPT_PASSWORD")
-	cfg.EmailSmpt.SmptEmail = os.Getenv("SMPT_EMAIL")
-	cfg.EmailSmpt.SmptServer = os.Getenv("SMPT_SERVER")
-	// Отладочный вывод всех значений
-	log.Printf("Config loaded: %+v\n", cfg)
+	cfg.Mailer.Email = os.Getenv("APP_MAILER_EMAIL")
+	cfg.Mailer.Password = os.Getenv("APP_MAILER_PASSWORD")
 
 	return &cfg, nil
+}
+
+// setDefaults populates the configuration with sensible default values.
+func setDefaults(c *config.Config) {
+	c.SetDefault("env", "development")
+	c.SetDefault("http.port", ":8080")
+	c.SetDefault("http.read_timeout", "10s")
+	c.SetDefault("http.write_timeout", "10s")
+	c.SetDefault("http.idle_timeout", "60s")
+	c.SetDefault("http.shutdown_timeout", "8s")
+	c.SetDefault("logging.level", "info")
+}
+func mustInt64Env(key string) (int64, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return 0, fmt.Errorf("%s is required", key)
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
+	}
+	return n, nil
 }

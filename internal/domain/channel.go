@@ -3,9 +3,7 @@ package domain
 type NotificationChannel string
 
 const (
-	ChannelEmail    NotificationChannel = "email"
-	ChannelTelegram NotificationChannel = "telegram"
-	ChannelSMS      NotificationChannel = "sms"
+	ChannelEmail NotificationChannel = "email"
 )
 
 func (c NotificationChannel) String() string {

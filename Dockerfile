@@ -21,9 +21,8 @@ WORKDIR /app
 
 # Копируем бинарник из builder-этапа
 COPY --from=builder /app/main .
+COPY --from=builder /app/web ./web
 
-# Копируем папку с шаблонами
-COPY --from=builder /app/templates ./templates
 
 # Запуск приложения
 CMD ["./main"]

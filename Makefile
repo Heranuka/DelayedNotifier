@@ -1,22 +1,98 @@
-ARGS=$(filter-out $@,$(MAKECMDGOALS))
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
 
-.PHONY: producer
-producer: 
-	docker compose exec kafka-local kafka-console-producer.sh --bootstrap-server kafka-local:9092 --topic topic
+APP_NAME := delayedNotifier
+COMPOSE := docker compose
+GO := go
+APP_PKG := ./cmd/main
+GOLANGCI_LINT := golangci-lint
 
+.PHONY: help
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Dev:"
+	@echo "  make up              Start services"
+	@echo "  make down            Stop everything"
+	@echo "  make logs            Follow logs"
+	@echo "  make ps              Show containers"
+	@echo "  make restart         Restart service"
+	@echo ""
+	@echo "Migrations:"
+	@echo "  make migrate-up      Run migrations (via migrator service)"
+	@echo "  make migrate-down    Rollback 1 migration (via migrator service)"
+	@echo ""
+	@echo "Go:"
+	@echo "  make tidy            go mod tidy"
+	@echo "  make fmt             gofmt"
+	@echo "  make test            go test ./..."
+	@echo "  make build           Build service locally into ./bin/"
+	@echo ""
+	@echo "Lint/format:"
+	@echo "  make lint            Run golangci-lint"
+	@echo "  make lint-fix        Run golangci-lint with --fix"
+	@echo "  make fmt-ci          Run golangci-lint fmt"
+	@echo ""
+	@echo "Docker:"
+	@echo "  make docker-build    Build service image"
+
+.PHONY: up
+up:
+	$(COMPOSE) up -d --build
+
+.PHONY: down
+down:
+	$(COMPOSE) down -v
+
+.PHONY: ps
+ps:
+	$(COMPOSE) ps
+
+.PHONY: logs
+logs:
+	$(COMPOSE) logs -f --tail=200
+
+.PHONY: restart
+restart:
+	$(COMPOSE) restart delayedNotifier
+
+.PHONY: migrate-up
 migrate-up:
-	migrate -path ./internal/migration/schema -database 'postgres://postgres:1@0.0.0.0:5432/postgres?sslmode=disable' up
+	$(COMPOSE) run --rm migrator up
+
+.PHONY: migrate-down
 migrate-down:
-	migrate -path ./internal/migration/schema -database 'postgres://postgres:1@0.0.0.0:5432/postgres?sslmode=disable' down	
-topics:
-	docker exec -it kafka-local kafka-topics.sh --bootstrap-server kafka-local:9092 --list
-messages:
-	docker exec -it kafka-local kafka-console-consumer.sh --bootstrap-server kafka-local:9092 --topic topic --from-beginning
-topic:
-	kafka-topics.sh --create --topic topic --bootstrap-server kafka-local:9092
-testAll:
-	go test -v -cover -coverpkg ./... ./...
-dockerRun:
-	docker build -t app . && docker compose up -d
-dockerClear:
-	docker compose down -v && docker rmi app
+	$(COMPOSE) run --rm migrator down
+
+.PHONY: tidy
+tidy:
+	$(GO) mod tidy
+
+.PHONY: fmt
+fmt:
+	gofmt -w .
+
+.PHONY: test
+test:
+	$(GO) test ./...
+
+.PHONY: build
+build:
+	mkdir -p bin
+	CGO_ENABLED=0 $(GO) build -o bin/delayedNotifier $(APP_PKG)
+
+.PHONY: docker-build
+docker-build:
+	$(COMPOSE) build commentTree
+
+.PHONY: lint
+lint:
+	$(GOLANGCI_LINT) run ./...
+
+.PHONY: lint-fix
+lint-fix:
+	$(GOLANGCI_LINT) run --fix ./...
+
+.PHONY: fmt-ci
+fmt-ci:
+	$(GOLANGCI_LINT) fmt ./...

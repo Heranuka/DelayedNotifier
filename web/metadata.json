@@ -1,0 +1,6 @@
+{
+  "name": "Chronos Notifier",
+  "description": "Schedule delayed notifications via email or telegram with a precise dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

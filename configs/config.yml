@@ -1,0 +1,35 @@
+env: development
+
+http:
+  port: ":8080"
+  read_timeout: 10s
+  write_timeout: 10s
+  idle_timeout: 60s
+  shutdown_timeout: 8s
+
+logging:
+  level: info
+
+postgres:
+  connection_url: "postgres://postgres:1@pg-local:5432/postgres?sslmode=disable"
+
+redis:
+  addr: "redis:6379"
+  password: ""
+  db: 0
+
+rabbitmq:
+  host: "rabbitmq"
+  port: 5672
+  user: "guest"
+  password: "guest"
+  exchange_name: "notifications.exchange"
+  queue_name: "notifications"
+  dlx_name: "notifications.dlx"
+  dlq_name: "notifications.dlq"
+
+mailer:
+  host: "smtp.gmail.com"
+  port: 587
+  use_tls: true
+  send_timeout: 10s
